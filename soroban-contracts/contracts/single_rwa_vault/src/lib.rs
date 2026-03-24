@@ -8,6 +8,8 @@ mod types;
 
 #[cfg(test)]
 mod test_funding_deadline;
+#[cfg(test)]
+mod test_lifecycle;
 
 pub use crate::types::*;
 
