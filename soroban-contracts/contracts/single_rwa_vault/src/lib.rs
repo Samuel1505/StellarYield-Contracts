@@ -241,6 +241,13 @@ impl SingleRWAVault {
 
     /// Withdraw exactly `assets` worth of underlying; burns the corresponding shares.
     ///
+    /// **State guard:** Only allowed in `Active` or `Matured` states.
+    /// During `Funding` the investment has not started so there is nothing to
+    /// withdraw, and a `Closed` vault has already been wound down.  The
+    /// `Active + Matured` policy keeps parity with `redeem` and lets LPs exit
+    /// once the RWA is live while still permitting withdrawals after maturity
+    /// for users who prefer the asset-denominated call over `redeem_at_maturity`.
+    ///
     /// Security: follows CEI — shares are burned (state change) before the
     /// external asset transfer.  Reentrancy lock prevents reentrant calls.
     pub fn withdraw(e: &Env, caller: Address, assets: i128, receiver: Address, owner: Address) -> i128 {
@@ -251,6 +258,7 @@ impl SingleRWAVault {
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &owner);
         require_not_blacklisted(e, &receiver);
+        require_active_or_matured(e);
 
         if caller != owner {
             let allowance = get_share_allowance(e, &owner, &caller);
@@ -277,6 +285,11 @@ impl SingleRWAVault {
     }
 
     /// Redeem `shares`; receive the corresponding underlying assets.
+    ///
+    /// **State guard:** Only allowed in `Active` or `Matured` states.
+    /// During `Funding` no investment has been made yet, and `Closed` vaults
+    /// have already been wound down.  For maturity-specific redemption with
+    /// automatic yield claiming use `redeem_at_maturity` instead.
     pub fn redeem(
         e: &Env,
         caller: Address,
@@ -291,6 +304,7 @@ impl SingleRWAVault {
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &owner);
         require_not_blacklisted(e, &receiver);
+        require_active_or_matured(e);
 
         if caller != owner {
             let allowance = get_share_allowance(e, &owner, &caller);
@@ -1131,6 +1145,16 @@ fn require_active_or_funding(e: &Env) {
     }
 }
 
+/// Withdrawals and redemptions are only valid once the vault is Active
+/// (investment is live) or Matured (investment has completed).  During Funding
+/// no underlying has been deployed yet, and a Closed vault has been wound down.
+fn require_active_or_matured(e: &Env) {
+    let state = get_vault_state(e);
+    if state != VaultState::Active && state != VaultState::Matured {
+        panic_with_error!(e, Error::InvalidVaultState);
+    }
+}
+
 fn require_not_blacklisted(e: &Env, addr: &Address) {
     if get_blacklisted(e, addr) {
         panic_with_error!(e, Error::AddressBlacklisted);
@@ -1315,3 +1339,6 @@ mod test_constructor;
 mod test_withdraw;
 #[cfg(test)]
 mod test_redemption;
+
+#[cfg(test)]
+mod test_vault_state_guards;
