@@ -1311,3 +1311,5 @@ mod tests;
 pub mod test_helpers;
 #[cfg(test)]
 mod test_constructor;
+#[cfg(test)]
+mod test_withdraw;
