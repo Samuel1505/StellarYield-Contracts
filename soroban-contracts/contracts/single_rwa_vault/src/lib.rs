@@ -350,6 +350,70 @@ impl SingleRWAVault {
         preview_redeem(e, shares)
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // ERC-4626 max helpers
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Maximum assets `receiver` can deposit right now.
+    /// Returns 0 when the vault is paused or not in Funding/Active state.
+    /// When `max_deposit_per_user` is 0 the vault is uncapped; returns i128::MAX.
+    pub fn max_deposit(e: &Env, receiver: Address) -> i128 {
+        if get_paused(e) {
+            return 0;
+        }
+        let state = get_vault_state(e);
+        if state != VaultState::Funding && state != VaultState::Active {
+            return 0;
+        }
+        let cap = get_max_deposit_per_user(e);
+        if cap == 0 {
+            return i128::MAX;
+        }
+        let already = get_user_deposited(e, &receiver);
+        (cap - already).max(0)
+    }
+
+    /// Maximum shares `receiver` can obtain via `mint` right now.
+    /// Converts `max_deposit` to shares using the current share price.
+    /// Returns 0 when the vault is paused or not in Funding/Active state.
+    pub fn max_mint(e: &Env, receiver: Address) -> i128 {
+        let max_assets = Self::max_deposit(e, receiver);
+        if max_assets == 0 {
+            return 0;
+        }
+        if max_assets == i128::MAX {
+            return i128::MAX;
+        }
+        preview_deposit(e, max_assets)
+    }
+
+    /// Maximum assets `owner` can withdraw right now.
+    /// Returns 0 when the vault is paused or not in Active/Matured state.
+    pub fn max_withdraw(e: &Env, owner: Address) -> i128 {
+        if get_paused(e) {
+            return 0;
+        }
+        let state = get_vault_state(e);
+        if state != VaultState::Active && state != VaultState::Matured {
+            return 0;
+        }
+        let shares = get_share_balance(e, &owner);
+        preview_redeem(e, shares)
+    }
+
+    /// Maximum shares `owner` can redeem right now (their full share balance).
+    /// Returns 0 when the vault is paused or not in Active/Matured state.
+    pub fn max_redeem(e: &Env, owner: Address) -> i128 {
+        if get_paused(e) {
+            return 0;
+        }
+        let state = get_vault_state(e);
+        if state != VaultState::Active && state != VaultState::Matured {
+            return 0;
+        }
+        get_share_balance(e, &owner)
+    }
+
     pub fn total_assets(e: &Env) -> i128 {
         total_assets(e)
     }
