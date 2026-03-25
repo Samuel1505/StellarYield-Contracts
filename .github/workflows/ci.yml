@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        working-directory: soroban-contracts
+        run: cargo fmt --check
+
+  clippy:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            soroban-contracts/target
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('soroban-contracts/**/Cargo.lock', 'soroban-contracts/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-clippy-
+      - name: Run clippy
+        working-directory: soroban-contracts
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            soroban-contracts/target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('soroban-contracts/**/Cargo.lock', 'soroban-contracts/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+      - name: Run tests
+        working-directory: soroban-contracts
+        run: cargo test --workspace
+
+  build:
+    name: Build WASM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            soroban-contracts/target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('soroban-contracts/**/Cargo.lock', 'soroban-contracts/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+      - name: Build single_rwa_vault contract
+        working-directory: soroban-contracts/contracts/single_rwa_vault
+        run: stellar contract build
+      - name: Build vault_factory contract
+        working-directory: soroban-contracts/contracts/vault_factory
+        run: stellar contract build
+      - name: Report WASM sizes
+        run: |
+          echo "## WASM Contract Sizes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Contract | Size | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|------|--------|" >> $GITHUB_STEP_SUMMARY
+          for wasm in $(find soroban-contracts/target/wasm32-unknown-unknown/release -name "*.wasm" -type f); do
+            size=$(wc -c < "$wasm" | tr -d ' ')
+            name=$(basename "$wasm")
+            size_kb=$((size / 1024))
+            limit_kb=256
+            if [ "$size_kb" -lt "$limit_kb" ]; then
+              status="✅ OK (${size_kb}KB / ${limit_kb}KB)"
+            else
+              status="❌ EXCEEDS LIMIT (${size_kb}KB / ${limit_kb}KB)"
+            fi
+            echo "| $name | ${size} bytes (${size_kb}KB) | $status |" >> $GITHUB_STEP_SUMMARY
+          done
+      - name: Check WASM size limits
+        run: |
+          failed=0
+          for wasm in $(find soroban-contracts/target/wasm32-unknown-unknown/release -name "*.wasm" -type f); do
+            size=$(wc -c < "$wasm" | tr -d ' ')
+            name=$(basename "$wasm")
+            limit=$((256 * 1024))
+            if [ "$size" -gt "$limit" ]; then
+              echo "::error::$name exceeds 256KB limit: $size bytes"
+              failed=1
+            fi
+          done
+          if [ "$failed" -eq 1 ]; then
+            exit 1
+          fi

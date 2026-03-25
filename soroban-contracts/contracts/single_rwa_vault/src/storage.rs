@@ -94,6 +94,9 @@ pub enum DataKey {
     // --- User deposit tracking ---
     UserDeposited(Address),
 
+    // --- Total deposited principal ---
+    TotalDeposited,
+
     // --- Early redemption ---
     RedemptionCounter,
     RedemptionRequest(u32),
@@ -274,6 +277,10 @@ instance_put!(put_total_yield_distributed, TotalYieldDistributed, i128);
 instance_get!(get_total_supply, TotalSupply, i128);
 instance_put!(put_total_supply, TotalSupply, i128);
 
+// TotalDeposited (principal tracking)
+instance_get!(get_total_deposited, TotalDeposited, i128);
+instance_put!(put_total_deposited, TotalDeposited, i128);
+
 // RedemptionCounter
 instance_get!(get_redemption_counter, RedemptionCounter, u32);
 instance_put!(put_redemption_counter, RedemptionCounter, u32);
@@ -290,7 +297,11 @@ pub fn get_operator(e: &Env, addr: &Address) -> bool {
 }
 
 pub fn put_operator(e: &Env, addr: Address, val: bool) {
-    e.storage().instance().set(&DataKey::Operator(addr), &val);
+    if val {
+        e.storage().instance().set(&DataKey::Operator(addr), &val);
+    } else {
+        e.storage().instance().remove(&DataKey::Operator(addr));
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
