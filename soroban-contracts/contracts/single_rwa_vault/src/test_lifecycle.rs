@@ -72,7 +72,7 @@ fn test_is_funding_target_met() {
     let v = ctx.vault();
 
     let target = v.funding_target();
-    
+
     // Not met initially
     assert!(!v.is_funding_target_met());
 
@@ -90,7 +90,7 @@ fn test_time_to_maturity() {
 
     let maturity = 10_000u64;
     v.set_maturity_date(&ctx.operator, &maturity);
-    
+
     ctx.env.ledger().with_mut(|li| li.timestamp = 1000);
     assert_eq!(v.time_to_maturity(), 9000);
 

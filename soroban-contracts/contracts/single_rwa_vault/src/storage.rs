@@ -138,6 +138,7 @@ pub fn bump_balance(e: &Env, addr: &Address) {
 /// as unclaimed and allow a second payout.  Bumping every related key on every
 /// write keeps the TTL well above the BALANCE_LIFETIME_THRESHOLD (~60 days)
 /// and eliminates that class of bug.
+#[allow(dead_code)]
 pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
     let epoch_keys = [
         DataKey::HasClaimedEpoch(addr.clone(), epoch),
@@ -146,9 +147,11 @@ pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
     ];
     for key in &epoch_keys {
         if e.storage().persistent().has(key) {
-            e.storage()
-                .persistent()
-                .extend_ttl(key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+            e.storage().persistent().extend_ttl(
+                key,
+                BALANCE_LIFETIME_THRESHOLD,
+                BALANCE_BUMP_AMOUNT,
+            );
         }
     }
 
@@ -158,9 +161,11 @@ pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
     ];
     for key in &addr_keys {
         if e.storage().persistent().has(key) {
-            e.storage()
-                .persistent()
-                .extend_ttl(key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+            e.storage().persistent().extend_ttl(
+                key,
+                BALANCE_LIFETIME_THRESHOLD,
+                BALANCE_BUMP_AMOUNT,
+            );
         }
     }
 }
@@ -361,11 +366,7 @@ pub fn put_share_balance(e: &Env, addr: &Address, val: i128) {
 /// (`expiration_ledger < current ledger sequence`).
 pub fn get_share_allowance(e: &Env, owner: &Address, spender: &Address) -> i128 {
     let key = DataKey::Allowance(owner.clone(), spender.clone());
-    match e
-        .storage()
-        .persistent()
-        .get::<_, AllowanceData>(&key)
-    {
+    match e.storage().persistent().get::<_, AllowanceData>(&key) {
         Some(data) => {
             if e.ledger().sequence() > data.expiration_ledger {
                 0 // allowance has expired
@@ -389,9 +390,13 @@ pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, new_amou
         .get::<_, AllowanceData>(&key)
         .map(|d| d.expiration_ledger)
         .unwrap_or(0);
-    e.storage()
-        .persistent()
-        .set(&key, &AllowanceData { amount: new_amount, expiration_ledger });
+    e.storage().persistent().set(
+        &key,
+        &AllowanceData {
+            amount: new_amount,
+            expiration_ledger,
+        },
+    );
     // Keep the entry alive until it naturally expires.
     let current = e.ledger().sequence();
     if expiration_ledger > current {
@@ -412,9 +417,13 @@ pub fn put_share_allowance_with_expiry(
     expiration_ledger: u32,
 ) {
     let key = DataKey::Allowance(owner.clone(), spender.clone());
-    e.storage()
-        .persistent()
-        .set(&key, &AllowanceData { amount, expiration_ledger });
+    e.storage().persistent().set(
+        &key,
+        &AllowanceData {
+            amount,
+            expiration_ledger,
+        },
+    );
     // Align the persistent TTL with the expiration so Soroban's archival
     // mechanism cleans up the entry automatically once it expires.
     let current = e.ledger().sequence();
@@ -584,11 +593,9 @@ pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
     e.storage()
         .persistent()
         .set(&DataKey::Blacklisted(addr.clone()), &status);
-    e.storage()
-        .persistent()
-        .extend_ttl(
-            &DataKey::Blacklisted(addr.clone()),
-            BALANCE_LIFETIME_THRESHOLD,
-            BALANCE_BUMP_AMOUNT,
-        );
+    e.storage().persistent().extend_ttl(
+        &DataKey::Blacklisted(addr.clone()),
+        BALANCE_LIFETIME_THRESHOLD,
+        BALANCE_BUMP_AMOUNT,
+    );
 }
