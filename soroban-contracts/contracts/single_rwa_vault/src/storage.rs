@@ -109,6 +109,11 @@ pub enum DataKey {
 
     // --- Transfer KYC gate ---
     TransferRequiresKyc,
+
+    // --- Emergency pro-rata distribution ---
+    EmergencyBalance,
+    HasClaimedEmergency(Address),
+    EmergencyTotalSupplySnapshot,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -624,4 +629,47 @@ pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
         BALANCE_LIFETIME_THRESHOLD,
         BALANCE_BUMP_AMOUNT,
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Emergency pro-rata distribution (instance + persistent)
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub fn get_emergency_balance(e: &Env) -> i128 {
+    e.storage()
+        .instance()
+        .get(&DataKey::EmergencyBalance)
+        .unwrap_or(0)
+}
+
+pub fn put_emergency_balance(e: &Env, val: i128) {
+    e.storage().instance().set(&DataKey::EmergencyBalance, &val);
+}
+
+pub fn get_emergency_total_supply_snapshot(e: &Env) -> i128 {
+    e.storage()
+        .instance()
+        .get(&DataKey::EmergencyTotalSupplySnapshot)
+        .unwrap_or(0)
+}
+
+pub fn put_emergency_total_supply_snapshot(e: &Env, val: i128) {
+    e.storage()
+        .instance()
+        .set(&DataKey::EmergencyTotalSupplySnapshot, &val);
+}
+
+pub fn get_has_claimed_emergency(e: &Env, addr: &Address) -> bool {
+    e.storage()
+        .persistent()
+        .get(&DataKey::HasClaimedEmergency(addr.clone()))
+        .unwrap_or(false)
+}
+
+pub fn put_has_claimed_emergency(e: &Env, addr: &Address, val: bool) {
+    let key = DataKey::HasClaimedEmergency(addr.clone());
+    e.storage().persistent().set(&key, &val);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }

@@ -54,6 +54,8 @@ pub enum VaultState {
     Closed,
     /// Funding failed (deadline passed without meeting target); refunds available.
     Cancelled,
+    /// Emergency mode: users can claim pro-rata share of remaining assets.
+    Emergency,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

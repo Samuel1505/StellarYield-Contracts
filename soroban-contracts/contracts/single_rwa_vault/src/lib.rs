@@ -1261,6 +1261,99 @@ impl SingleRWAVault {
         release_lock(e);
     }
 
+    /// Enable emergency pro-rata distribution mode.
+    ///
+    /// This transitions the vault to the Emergency state, snapshots the current
+    /// vault balance and total supply, and allows each user to individually
+    /// claim their proportional share of remaining assets.
+    ///
+    /// Admin-only. Once enabled, users call `emergency_claim` to withdraw.
+    pub fn emergency_enable_pro_rata(e: &Env, caller: Address) {
+        caller.require_auth();
+        acquire_lock(e);
+        require_admin(e, &caller);
+
+        let balance = asset_balance_of_vault(e);
+        let supply = get_total_supply(e);
+
+        if supply == 0 {
+            panic_with_error!(e, Error::ZeroAmount);
+        }
+
+        let old_state = get_vault_state(e);
+        put_vault_state(e, VaultState::Emergency);
+        put_emergency_balance(e, balance);
+        put_emergency_total_supply_snapshot(e, supply);
+        put_paused(e, true);
+
+        emit_vault_state_changed(e, old_state, VaultState::Emergency);
+        emit_emergency_mode_enabled(e, balance, supply);
+        bump_instance(e);
+        release_lock(e);
+    }
+
+    /// Claim pro-rata share of vault assets in Emergency state.
+    ///
+    /// Each user can call this once to receive: emergency_balance * user_shares / total_supply_snapshot
+    /// Shares are burned upon claiming.
+    pub fn emergency_claim(e: &Env, caller: Address) -> i128 {
+        caller.require_auth();
+        acquire_lock(e);
+
+        if get_vault_state(e) != VaultState::Emergency {
+            panic_with_error!(e, Error::NotInEmergency);
+        }
+        if get_has_claimed_emergency(e, &caller) {
+            panic_with_error!(e, Error::AlreadyClaimedEmergency);
+        }
+
+        let user_shares = get_share_balance(e, &caller);
+        if user_shares == 0 {
+            panic_with_error!(e, Error::ZeroAmount);
+        }
+
+        let emergency_balance = get_emergency_balance(e);
+        let total_supply_snapshot = get_emergency_total_supply_snapshot(e);
+
+        let claim_amount = (emergency_balance * user_shares) / total_supply_snapshot;
+
+        put_has_claimed_emergency(e, &caller, true);
+        _burn(e, &caller, user_shares);
+
+        if claim_amount > 0 {
+            transfer_asset_from_vault(e, &caller, claim_amount);
+        }
+
+        emit_emergency_claimed(e, caller, claim_amount);
+        bump_instance(e);
+        release_lock(e);
+        claim_amount
+    }
+
+    /// View function: calculate a user's pending emergency claim amount.
+    pub fn pending_emergency_claim(e: &Env, user: Address) -> i128 {
+        if get_vault_state(e) != VaultState::Emergency {
+            return 0;
+        }
+        if get_has_claimed_emergency(e, &user) {
+            return 0;
+        }
+
+        let user_shares = get_share_balance(e, &user);
+        if user_shares == 0 {
+            return 0;
+        }
+
+        let emergency_balance = get_emergency_balance(e);
+        let total_supply_snapshot = get_emergency_total_supply_snapshot(e);
+
+        if total_supply_snapshot == 0 {
+            return 0;
+        }
+
+        (emergency_balance * user_shares) / total_supply_snapshot
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // View helpers
     // ─────────────────────────────────────────────────────────────────
