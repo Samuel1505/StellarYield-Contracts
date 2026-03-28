@@ -121,22 +121,72 @@ pub fn emit_redeem_at_maturity(
     );
 }
 
+/// Which early-redemption user event to emit (same topics/data layout for all variants).
+#[derive(Copy, Clone)]
+enum EarlyRedemptionUserEventKind {
+    Requested,
+    Processed,
+    Cancelled,
+}
+
+/// Common early-redemption event layout: topics `(tag, user)`, data `(request_id, amount)`.
+///
+/// Each `symbol_short!` lives in a `match` arm so topic symbols stay compile-time literals
+/// (a single `publish` with a `Symbol` parameter is rejected by the Soroban host).
+fn publish_early_redemption_user_event(
+    e: &Env,
+    kind: EarlyRedemptionUserEventKind,
+    user: Address,
+    request_id: u32,
+    amount: i128,
+) {
+    match kind {
+        EarlyRedemptionUserEventKind::Requested => {
+            e.events()
+                .publish((symbol_short!("erq_req"), user), (request_id, amount));
+        }
+        EarlyRedemptionUserEventKind::Processed => {
+            e.events()
+                .publish((symbol_short!("erq_done"), user), (request_id, amount));
+        }
+        EarlyRedemptionUserEventKind::Cancelled => {
+            e.events()
+                .publish((symbol_short!("erq_can"), user), (request_id, amount));
+        }
+    }
+}
+
 /// Emitted by `request_early_redemption`.
 pub fn emit_early_redemption_requested(e: &Env, user: Address, request_id: u32, shares: i128) {
-    e.events()
-        .publish((symbol_short!("erq_req"), user), (request_id, shares));
+    publish_early_redemption_user_event(
+        e,
+        EarlyRedemptionUserEventKind::Requested,
+        user,
+        request_id,
+        shares,
+    );
 }
 
 /// Emitted by `process_early_redemption`.
 pub fn emit_early_redemption_processed(e: &Env, user: Address, request_id: u32, net_assets: i128) {
-    e.events()
-        .publish((symbol_short!("erq_done"), user), (request_id, net_assets));
+    publish_early_redemption_user_event(
+        e,
+        EarlyRedemptionUserEventKind::Processed,
+        user,
+        request_id,
+        net_assets,
+    );
 }
 
 /// Emitted by `cancel_early_redemption`.
 pub fn emit_early_redemption_cancelled(e: &Env, user: Address, request_id: u32, shares: i128) {
-    e.events()
-        .publish((symbol_short!("erq_can"), user), (request_id, shares));
+    publish_early_redemption_user_event(
+        e,
+        EarlyRedemptionUserEventKind::Cancelled,
+        user,
+        request_id,
+        shares,
+    );
 }
 
 /// Emitted by `transfer_admin`.
@@ -211,9 +261,16 @@ pub fn emit_data_migrated(e: &Env, old_version: u32, new_version: u32) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Emitted when a timelock action is proposed.
-pub fn emit_action_proposed(e: &Env, action_id: u32, action_type: crate::types::ActionType, executable_at: u64) {
-    e.events()
-        .publish((symbol_short!("act_prp"), action_id), (action_type, executable_at));
+pub fn emit_action_proposed(
+    e: &Env,
+    action_id: u32,
+    action_type: crate::types::ActionType,
+    executable_at: u64,
+) {
+    e.events().publish(
+        (symbol_short!("act_prp"), action_id),
+        (action_type, executable_at),
+    );
 }
 
 /// Emitted when a timelock action is executed.
