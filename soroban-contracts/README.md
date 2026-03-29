@@ -319,7 +319,7 @@ stellar contract invoke \
 
 ---
 
-### `vault_factory`
+### `vault_factory `
 
 #### Vault creation
 
