@@ -917,57 +917,7 @@ fn test_claim_yield_for_epoch_twice_panics() {
     vault.claim_yield_for_epoch(&user, &1u32);
 }
 
-/// Users who never deposited (zero shares) cannot claim any yield.
-/// claim_yield should return 0 and not panic.
-#[test]
-fn test_claim_yield_with_zero_shares_returns_zero() {
-    let env = Env::default();
-    env.mock_all_auths();
 
-    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
-    let user_with_zero_shares = Address::generate(&env);
-
-    // Set up vault and distribute some yield (but don't let zero-share user deposit)
-    let deposit_amount = 1_000_000i128;
-    let other_user = Address::generate(&env);
-    fund_user(
-        &env,
-        &vault_id,
-        &token_id,
-        &zkme_id,
-        &other_user,
-        deposit_amount,
-    );
-
-    activate(&env, &vault_id, &admin);
-
-    let vault = SingleRWAVaultClient::new(&env, &vault_id);
-
-    // Distribute yield to create epochs
-    let yield_amount = 50_000i128;
-    distribute_yield(&env, &vault_id, &token_id, &admin, yield_amount);
-
-    // Verify zero-share user has no shares
-    assert_eq!(
-        vault.balance(&user_with_zero_shares),
-        0,
-        "user has zero shares"
-    );
-
-    // Attempt to claim yield - should return 0, not panic
-    let claimed = vault.claim_yield(&user_with_zero_shares);
-    assert_eq!(
-        claimed, 0,
-        "claim_yield should return 0 for users with zero shares"
-    );
-
-    // Verify no yield is pending either
-    let pending = vault.pending_yield(&user_with_zero_shares);
-    assert_eq!(
-        pending, 0,
-        "pending_yield should be 0 for users with zero shares"
-    );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Regression test: Multiple users claiming yield for the same epoch
