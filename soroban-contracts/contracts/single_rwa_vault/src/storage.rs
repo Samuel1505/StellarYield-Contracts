@@ -26,6 +26,7 @@ pub const INSTANCE_BUMP_AMOUNT: u32 = 535000; // bump target
 
 pub const BALANCE_LIFETIME_THRESHOLD: u32 = 1036800; // ~60 days
 pub const BALANCE_BUMP_AMOUNT: u32 = 1069000;
+pub const MAX_TRANSFER_EXEMPTIONS: u32 = 50;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Storage key enum
@@ -119,6 +120,10 @@ pub enum Key {
     // --- Blacklist ---
     Blacklst(Address),
 
+    // --- Transfer exemptions ---
+    TransferExempt(Address),
+    TransferExemptList,
+
     // --- Transfer KYC gate ---
     XferKyc,
 
@@ -156,6 +161,7 @@ const K_TAG_ESC_SHR: u32 = 215;
 const K_TAG_BLACKLST: u32 = 216;
 const K_TAG_HAS_CLM_EMG: u32 = 217;
 const K_TAG_TLK_ACT: u32 = 218;
+const K_TAG_TRANSFER_EXEMPT: u32 = 219;
 
 impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
     fn into_val(&self, env: &Env) -> soroban_sdk::Val {
@@ -177,6 +183,7 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::RedReq(n) => (K_TAG_RED_REQ, *n).into_val(env),
             Key::EscShr(a) => (K_TAG_ESC_SHR, a.clone()).into_val(env),
             Key::Blacklst(a) => (K_TAG_BLACKLST, a.clone()).into_val(env),
+            Key::TransferExempt(a) => (K_TAG_TRANSFER_EXEMPT, a.clone()).into_val(env),
             Key::HasClmEmg(a) => (K_TAG_HAS_CLM_EMG, a.clone()).into_val(env),
             Key::TlkAct(n) => (K_TAG_TLK_ACT, *n).into_val(env),
 
@@ -211,6 +218,7 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::TotSup => 39u32.into_val(env),
             Key::TotDep => 41u32.into_val(env),
             Key::RedCnt => 42u32.into_val(env),
+            Key::TransferExemptList => 45u32.into_val(env),
             Key::XferKyc => 46u32.into_val(env),
             Key::EmgBal => 47u32.into_val(env),
             Key::EmgTotSup => 49u32.into_val(env),
@@ -246,6 +254,7 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
                 K_TAG_USR_DEP => Key::UsrDep(a),
                 K_TAG_ESC_SHR => Key::EscShr(a),
                 K_TAG_BLACKLST => Key::Blacklst(a),
+                K_TAG_TRANSFER_EXEMPT => Key::TransferExempt(a),
                 K_TAG_HAS_CLM_EMG => Key::HasClmEmg(a),
                 _ => return Err(soroban_sdk::Error::from_contract_error(1)),
             });
@@ -297,6 +306,7 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
             39 => Ok(Key::TotSup),
             41 => Ok(Key::TotDep),
             42 => Ok(Key::RedCnt),
+            45 => Ok(Key::TransferExemptList),
             46 => Ok(Key::XferKyc),
             47 => Ok(Key::EmgBal),
             49 => Ok(Key::EmgTotSup),
@@ -868,6 +878,78 @@ pub fn get_transfer_requires_kyc(e: &Env) -> bool {
 
 pub fn put_transfer_requires_kyc(e: &Env, val: bool) {
     e.storage().instance().set(&Key::XferKyc, &val);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Transfer exemptions
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn transfer_exempt_index(addresses: &Vec<Address>, addr: &Address) -> Option<u32> {
+    for i in 0..addresses.len() {
+        if addresses.get(i).unwrap() == *addr {
+            return Some(i);
+        }
+    }
+    None
+}
+
+fn put_transfer_exempt_address_list(e: &Env, addresses: &Vec<Address>) {
+    if addresses.is_empty() {
+        e.storage().instance().remove(&Key::TransferExemptList);
+    } else {
+        e.storage()
+            .instance()
+            .set(&Key::TransferExemptList, addresses);
+    }
+}
+
+pub fn get_transfer_exempt(e: &Env, addr: &Address) -> bool {
+    e.storage()
+        .persistent()
+        .get(&Key::TransferExempt(addr.clone()))
+        .unwrap_or(false)
+}
+
+pub fn get_transfer_exempt_addresses(e: &Env) -> Vec<Address> {
+    e.storage()
+        .instance()
+        .get(&Key::TransferExemptList)
+        .unwrap_or_else(|| Vec::new(e))
+}
+
+pub fn put_transfer_exempt(e: &Env, addr: &Address, exempt: bool) {
+    let key = Key::TransferExempt(addr.clone());
+    let mut addresses = get_transfer_exempt_addresses(e);
+    let existing = transfer_exempt_index(&addresses, addr);
+
+    if exempt {
+        if existing.is_none() {
+            if addresses.len() >= MAX_TRANSFER_EXEMPTIONS {
+                panic_with_error!(e, Error::TransferExemptionLimitExceeded);
+            }
+            addresses.push_back(addr.clone());
+            put_transfer_exempt_address_list(e, &addresses);
+        }
+
+        e.storage().persistent().set(&key, &true);
+        e.storage()
+            .persistent()
+            .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+        return;
+    }
+
+    e.storage().persistent().remove(&key);
+
+    if existing.is_some() {
+        let mut updated = Vec::new(e);
+        for i in 0..addresses.len() {
+            let current = addresses.get(i).unwrap();
+            if current != *addr {
+                updated.push_back(current);
+            }
+        }
+        put_transfer_exempt_address_list(e, &updated);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

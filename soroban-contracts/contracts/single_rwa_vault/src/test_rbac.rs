@@ -249,6 +249,18 @@ fn test_compliance_officer_can_set_zkme_verifier() {
 
 #[test]
 #[should_panic]
+fn test_compliance_officer_cannot_set_transfer_exempt() {
+    let (env, vault_id, _, admin) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+    let co = Address::generate(&env);
+    let target = Address::generate(&env);
+
+    client.grant_role(&admin, &co, &Role::ComplianceOfficer);
+    client.set_transfer_exempt(&co, &target, &true);
+}
+
+#[test]
+#[should_panic]
 fn test_compliance_officer_cannot_distribute_yield() {
     let (env, vault_id, asset_id, admin) = setup();
     let client = SingleRWAVaultClient::new(&env, &vault_id);

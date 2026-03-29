@@ -86,4 +86,6 @@ pub enum Error {
     PreviewZeroShares = 47,
     /// Shares correspond to zero assets during preview.
     PreviewZeroAssets = 48,
+    /// Too many transfer-exempt addresses have been configured.
+    TransferExemptionLimitExceeded = 49,
 }

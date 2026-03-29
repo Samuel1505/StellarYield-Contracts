@@ -232,6 +232,12 @@ pub fn emit_address_blacklisted(e: &Env, address: Address, status: bool) {
         .publish((symbol_short!("blacklist"), address), status);
 }
 
+/// Emitted by `set_transfer_exempt`.
+pub fn emit_transfer_exemption_set(e: &Env, address: Address, exempt: bool) {
+    e.events()
+        .publish((symbol_short!("xfer_exm"), address), exempt);
+}
+
 /// Emitted by `cancel_funding` — vault moved to Cancelled state.
 pub fn emit_funding_cancelled(e: &Env) {
     e.events()

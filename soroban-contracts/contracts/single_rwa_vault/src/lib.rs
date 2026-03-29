@@ -96,6 +96,7 @@ impl SingleRWAVault {
 
     /// Timeout for emergency proposals: 24 hours in seconds.
     pub const EMERGENCY_PROPOSAL_TIMEOUT: u64 = 86400;
+    pub const MAX_TRANSFER_EXEMPTIONS: u32 = crate::storage::MAX_TRANSFER_EXEMPTIONS;
 
     // ─────────────────────────────────────────────────────────────────
     // Constructor
@@ -1738,6 +1739,23 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
+    /// Admin-only transfer restriction exemption for designated market makers.
+    pub fn set_transfer_exempt(e: &Env, caller: Address, address: Address, exempt: bool) {
+        caller.require_auth();
+        require_admin(e, &caller);
+        put_transfer_exempt(e, &address, exempt);
+        emit_transfer_exemption_set(e, address, exempt);
+        bump_instance(e);
+    }
+
+    pub fn is_transfer_exempt(e: &Env, address: Address) -> bool {
+        get_transfer_exempt(e, &address)
+    }
+
+    pub fn get_transfer_exempt_addresses(e: &Env) -> Vec<Address> {
+        crate::storage::get_transfer_exempt_addresses(e)
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // Emergency
     // ─────────────────────────────────────────────────────────────────
@@ -2165,11 +2183,7 @@ impl SingleRWAVault {
 
     pub fn transfer(e: &Env, from: Address, to: Address, amount: i128) {
         from.require_auth();
-        require_not_blacklisted(e, &from);
-        require_not_blacklisted(e, &to);
-        if get_transfer_requires_kyc(e) {
-            require_kyc_verified(e, &to);
-        }
+        require_transfer_parties_allowed(e, &from, &to);
         update_user_snapshots_for_transfer(e, &from, &to);
         spend_share_balance(e, &from, amount);
         receive_share_balance(e, &to, amount);
@@ -2180,11 +2194,7 @@ impl SingleRWAVault {
     pub fn transfer_from(e: &Env, spender: Address, from: Address, to: Address, amount: i128) {
         spender.require_auth();
         require_not_blacklisted(e, &spender);
-        require_not_blacklisted(e, &from);
-        require_not_blacklisted(e, &to);
-        if get_transfer_requires_kyc(e) {
-            require_kyc_verified(e, &to);
-        }
+        require_transfer_parties_allowed(e, &from, &to);
         update_user_snapshots_for_transfer(e, &from, &to);
         let allowance = get_share_allowance(e, &from, &spender);
         if allowance < amount {
@@ -2477,6 +2487,27 @@ fn require_not_blacklisted(e: &Env, addr: &Address) {
     if get_blacklisted(e, addr) {
         panic_with_error!(e, Error::AddressBlacklisted);
     }
+}
+
+fn transfer_restrictions_exempt(e: &Env, from: &Address, to: &Address) -> bool {
+    get_transfer_exempt(e, from) || get_transfer_exempt(e, to)
+}
+
+fn require_transfer_parties_allowed(e: &Env, from: &Address, to: &Address) {
+    // Blacklist enforcement is the compliance override and is never bypassed.
+    require_not_blacklisted(e, from);
+    require_not_blacklisted(e, to);
+
+    if transfer_restrictions_exempt(e, from, to) {
+        return;
+    }
+
+    if get_transfer_requires_kyc(e) {
+        require_kyc_verified(e, to);
+    }
+
+    // Future transfer lock-up checks should live here so the exemption path
+    // stays shared across all transfer restrictions except blacklist.
 }
 
 fn require_not_blacklisted_deposit_parties(e: &Env, caller: &Address, receiver: &Address) {

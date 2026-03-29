@@ -13,7 +13,7 @@
 
 extern crate std;
 
-use soroban_sdk::{symbol_short, testutils::Events as _, IntoVal};
+use soroban_sdk::{symbol_short, testutils::Address as _, testutils::Events as _, IntoVal};
 
 use crate::test_helpers::{mint_usdc, setup_with_kyc_bypass, TestContext};
 
@@ -185,4 +185,31 @@ fn test_distribute_yield_emits_event_with_correct_schema() {
         event_amount, yield_amount,
         "yield_distributed event: amount data must match distributed yield"
     );
+}
+
+#[test]
+fn test_transfer_exemption_set_emits_event_with_correct_schema() {
+    let ctx = setup_with_kyc_bypass();
+    let market_maker = soroban_sdk::Address::generate(&ctx.env);
+
+    ctx.vault()
+        .set_transfer_exempt(&ctx.admin, &market_maker, &true);
+
+    let events = ctx.env.events().all();
+    let exemption_event = events.iter().find(|(contract, topics, _)| {
+        *contract == ctx.vault_id && {
+            let sym: soroban_sdk::Symbol = topics.get_unchecked(0).into_val(&ctx.env);
+            sym == symbol_short!("xfer_exm")
+        }
+    });
+    let (_, topics, data) = exemption_event.expect("transfer exemption event must be emitted");
+
+    let topic_address: soroban_sdk::Address = topics.get_unchecked(1).into_val(&ctx.env);
+    assert_eq!(
+        topic_address, market_maker,
+        "transfer exemption event: address topic must match"
+    );
+
+    let exempt: bool = data.into_val(&ctx.env);
+    assert!(exempt, "transfer exemption event: data must match status");
 }
