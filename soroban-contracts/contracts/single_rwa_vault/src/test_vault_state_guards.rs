@@ -342,7 +342,7 @@ fn test_process_early_redemption_during_funding_panics() {
 
     fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
     let vault = SingleRWAVaultClient::new(&env, &vault_id);
-    
+
     // Vault still in Funding.
     vault.process_early_redemption(&admin, &1u32);
 }
