@@ -256,10 +256,7 @@ fn test_vault_count_matches_list_length() {
 
     let all = client.get_all_vaults();
     e.as_contract(&factory_id, || {
-        assert_eq!(
-            get_vault_count(&e) as usize,
-            all.len() as usize
-        );
+        assert_eq!(get_vault_count(&e) as usize, all.len() as usize);
     });
 }
 
