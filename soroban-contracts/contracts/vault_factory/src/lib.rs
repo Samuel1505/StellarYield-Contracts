@@ -97,6 +97,10 @@ impl VaultFactory {
         get_contract_version(e)
     }
 
+    pub fn version(e: &Env) -> u32 {
+        get_contract_version(e)
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // Vault creation – simple (mirrors createSingleRWAVault)
     // ─────────────────────────────────────────────────────────────────

@@ -111,10 +111,30 @@ $$\text{yield}_{\text{user}} = \frac{\text{shares}_{\text{user at epoch } n}}{\t
 
 ## Storage design
 
-| Storage tier | Used for |
-|---|---|
-| **Instance** | Global config, vault state, epoch counters, operator registry — all tied to the contract's own TTL |
-| **Persistent** | Per-user balances, allowances, yield claim flags, share snapshots — bumped on every interaction |
+The protocol follows Stellar best practices for storage tiering to balance cost and durability.
+
+| Storage tier | Description | TTL Behavior |
+|---|---|---|
+| **Instance** | Global config, vault state, counters. | Shared lifetime; bumped by contract logic. |
+| **Persistent** | Per-user balances, allowances, snapshots. | Per-entry lifetime; bumped on user interaction. |
+
+### Storage key map (DataKey)
+
+| Key | Tier | Description |
+|---|---|---|
+| `Admin` | Instance | Primary contract administrator address. |
+| `Asset` | Instance | Underlying stable asset address (e.g. USDC). |
+| `VaultSt` | Instance | Current lifecycle state (`Funding`, `Active`, `Matured`, `Closed`). |
+| `TotSup` | Instance | Total supply of vault shares. |
+| `TotDep` | Instance | Total deposited principal (excluding yield). |
+| `CurEpoch` | Instance | Current epoch counter. |
+| `Balance(Addr)` | Persistent | User share balance. |
+| `Allowance(Owner, Spender)` | Persistent | User share allowance (with expiry). |
+| `UsrDep(Addr)` | Persistent | Total principal deposited by a specific user. |
+| `EpYield(u32)` | Instance | Total yield distributed in a specific epoch. |
+| `EpTotShr(u32)` | Instance | Total share supply snapshotted at epoch distribution. |
+| `Role(Addr, Role)` | Instance | Granular RBAC role assignment. |
+| `Blacklst(Addr)` | Persistent | Compliance blacklist status. |
 
 ---
 
@@ -258,94 +278,46 @@ stellar contract invoke \
 
 ### `single_rwa_vault`
 
-#### Deposits & withdrawals
+#### Core operations
 
-| Function | Auth | Description |
-|---|---|---|
-| `deposit(caller, assets, receiver)` | `caller` | Deposit assets; receive shares. Requires KYC. |
-| `mint(caller, shares, receiver)` | `caller` | Mint exact shares; assets pulled from caller. Requires KYC. |
-| `withdraw(caller, assets, receiver, owner)` | `caller` | Burn shares; withdraw exact asset amount. |
-| `redeem(caller, shares, receiver, owner)` | `caller` | Burn exact shares; receive proportional assets. |
-| `redeem_at_maturity(caller, shares, receiver, owner)` | `caller` | Matured-state full redemption; auto-claims pending yield. |
+| Method | Mutability | Auth | Units | Description |
+|---|---|---|---|---|
+| `deposit` | Update | None* | Assets | Deposit assets, receive shares. *Requires KYC. |
+| `mint` | Update | None* | Shares | Mint shares, pay assets. *Requires KYC. |
+| `withdraw` | Update | None | Assets | Burn shares, withdraw assets. |
+| `redeem` | Update | None | Shares | Burn shares, receive assets. |
+| `redeem_at_maturity` | Update | None | Shares | Matured-state full redemption with auto-yield claim. |
 
-#### Yield
+#### Yield management
 
-| Function | Auth | Description |
-|---|---|---|
-| `distribute_yield(caller, amount)` | Operator | Pull `amount` of asset into vault; open new epoch. |
-| `claim_yield(caller)` | `caller` | Claim all unclaimed yield across all epochs. |
-| `claim_yield_for_epoch(caller, epoch)` | `caller` | Claim yield for one specific epoch. |
-| `pending_yield(user)` | — | Total unclaimed yield for `user`. |
-| `pending_yield_for_epoch(user, epoch)` | — | Unclaimed yield for `user` in one epoch. |
+| Method | Mutability | Auth | Units | Description |
+|---|---|---|---|---|
+| `distribute_yield` | Update | Operator | Assets | Inject yield and start a new epoch. |
+| `claim_yield` | Update | None | Assets | Claim all pending yield across all epochs. |
+| `pending_yield` | View | None | Assets | Unclaimed yield amount for a user. |
+| `share_price` | View | None | Assets | Current price of one share (scaled by decimals). |
+| `epoch_yield` | View | None | Assets | Total yield distributed in a given epoch. |
 
-#### Lifecycle
+#### Administration & Configuration
 
-| Function | Auth | Description |
-|---|---|---|
-| `activate_vault(caller)` | Operator | Transition `Funding → Active`. Requires funding target met. |
-| `mature_vault(caller)` | Operator | Transition `Active → Matured`. Requires `now ≥ maturity_date`. |
-| `set_maturity_date(caller, timestamp)` | Operator | Update the maturity timestamp. |
-
-#### Redemption
-
-| Function | Auth | Description |
-|---|---|---|
-| `request_early_redemption(caller, shares)` | `caller` | Submit an early exit request. |
-| `process_early_redemption(caller, request_id)` | Operator | Approve request; net assets transferred minus fee. |
-
-#### Access control & emergency
-
-| Function | Auth | Description |
-|---|---|---|
-| `set_operator(caller, operator, status)` | Admin | Grant or revoke operator role. |
-| `transfer_admin(caller, new_admin)` | Admin | Transfer admin role. |
-| `pause(caller, reason)` | Operator | Halt all state-changing operations. |
-| `unpause(caller)` | Operator | Resume operations. |
-| `emergency_withdraw(caller, recipient)` | Admin | Drain vault assets to `recipient` and pause. |
-| `set_zkme_verifier(caller, verifier)` | Admin | Update the zkMe verifier contract. |
-| `set_cooperator(caller, cooperator)` | Admin | Update the zkMe cooperator address. |
-
-#### SEP-41 share token
-
-| Function | Description |
-|---|---|
-| `balance(id)` | Share balance of `id` |
-| `transfer(from, to, amount)` | Transfer shares |
-| `transfer_from(spender, from, to, amount)` | Transfer shares via allowance |
-| `approve(from, spender, amount, expiration_ledger)` | Set allowance |
-| `allowance(from, spender)` | Read allowance |
-| `burn(from, amount)` / `burn_from(spender, from, amount)` | Burn shares |
-| `decimals / name / symbol / total_supply` | Token metadata |
-
----
+| Method | Mutability | Auth | Units | Description |
+|---|---|---|---|---|
+| `activate_vault` | Update | Operator | — | Transition `Funding → Active`. |
+| `mature_vault` | Update | Operator | — | Transition `Active → Matured`. |
+| `set_maturity_date` | Update | Operator | Seconds | Update the maturity timestamp. |
+| `set_operator` | Update | Admin | — | Grant or revoke operator role. |
+| `transfer_admin` | Update | Admin | — | Transfer primary admin role. |
+| `pause / unpause` | Update | Operator | — | Halt or resume vault operations. |
+| `version` | View | None | — | Semantic contract version. |
 
 ### `vault_factory`
 
-#### Vault creation
-
-| Function | Auth | Description |
-|---|---|---|
-| `create_single_rwa_vault(caller, asset, name, symbol, …)` | Operator | Deploy a vault with minimal parameters. |
-| `create_single_rwa_vault_full(caller, params)` | Operator | Deploy a fully configured vault via `CreateVaultParams`. |
-| `batch_create_vaults(caller, params)` | Operator | Deploy multiple vaults in one transaction. |
-
-#### Registry queries
-
-| Function | Description |
-|---|---|
-| `get_all_vaults()` | All registered vault addresses |
-| `get_single_rwa_vaults()` | Single-RWA vault addresses only |
-| `get_active_vaults()` | Active (non-deactivated) vaults |
-| `get_vault_info(vault)` | `VaultInfo` for a vault (`vault`, **`asset`** (underlying), `vault_type`, `name`, `symbol`, `active`, `created_at`) |
-| `is_registered_vault(vault)` | Boolean registry check |
-| `get_vault_count()` | Total number of registered vaults |
-
-#### Admin
-
-| Function | Auth | Description |
-|---|---|---|
-| `set_vault_status(caller, vault, active)` | Admin | Activate or deactivate a vault in the registry. |
-| `set_defaults(caller, asset, zkme_verifier, cooperator)` | Admin | Update default settings for future vaults. |
-| `set_vault_wasm_hash(caller, hash)` | Admin | Update the vault WASM hash used for deployment. |
-| `set_operator(caller, operator, status)` | Admin | Grant or revoke operator role. |
-| `transfer_admin(caller, new_admin)` | Admin | Transfer admin role. |
+| Method | Mutability | Auth | Units | Description |
+|---|---|---|---|---|
+| `create_single_rwa_vault`| Update | Operator | — | Deploy a new vault contract. |
+| `batch_create_vaults` | Update | Operator | — | Deploy multiple vaults in one TX (max 10). |
+| `get_all_vaults` | View | None | — | List all registered vault addresses. |
+| `get_vault_info` | View | None | — | Read metadata for a specific vault. |
+| `set_vault_status` | Update | Admin | — | Activate/deactivate a vault in the registry. |
+| `set_vault_wasm_hash` | Update | Admin | — | Update the WASM used for new deployments. |
+| `version` | View | None | — | Factory contract version. |
