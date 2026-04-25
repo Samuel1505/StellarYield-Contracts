@@ -142,7 +142,7 @@ impl SingleRWAVault {
         if params.maturity_date <= e.ledger().timestamp() {
             panic_with_error!(e, Error::InvalidInitParams);
         }
-        if params.early_redemption_fee_bps > 1000 {
+        if params.early_redemption_fee_bps > 1000 || params.operator_fee_bps > 1000 {
             panic_with_error!(e, Error::InvalidInitParams);
         }
         if params.min_deposit < 0 || params.funding_target < 0 {
@@ -186,6 +186,7 @@ impl SingleRWAVault {
         put_min_deposit(e, params.min_deposit);
         put_max_deposit_per_user(e, params.max_deposit_per_user);
         put_early_redemption_fee_bps(e, params.early_redemption_fee_bps);
+        put_operator_fee_bps(e, params.operator_fee_bps);
         put_yield_vesting_period(e, params.yield_vesting_period);
 
         // Initial state
@@ -2099,6 +2100,23 @@ impl SingleRWAVault {
 
     pub fn early_redemption_fee_bps(e: &Env) -> u32 {
         get_early_redemption_fee_bps(e)
+    }
+ 
+    /// Returns the fee in basis points (0-10,000) that may be charged by the
+    /// cooperator or platform for vault operations.
+    ///
+    /// ## Cooperator Role & Trust Boundary
+    /// The cooperator (retrievable via `cooperator()`) is a privileged off-chain
+    /// entity responsible for:
+    /// 1. **Off-chain approvals**: Validating user eligibility (KYC/AML) before
+    ///    they can interact with the vault.
+    /// 2. **Callbacks**: Responding to on-chain verification requests from the
+    ///    `zkme_verifier`.
+    ///
+    /// Integrators should note that the cooperator is a trusted party in the
+    /// vault's lifecycle. This view is read-only and gas-light.
+    pub fn operator_fee_bps(e: &Env) -> u32 {
+        get_operator_fee_bps(e)
     }
 
     /// Read-only preview of gross assets, fee, and net payout for an early redemption.

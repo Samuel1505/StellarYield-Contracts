@@ -89,6 +89,7 @@ fn test_vault_config_matches_init_params() {
         v.early_redemption_fee_bps(),
         ctx.params.early_redemption_fee_bps
     );
+    assert_eq!(v.operator_fee_bps(), ctx.params.operator_fee_bps);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
