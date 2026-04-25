@@ -1762,9 +1762,24 @@ impl SingleRWAVault {
     // Deposit limits
     // ─────────────────────────────────────────────────────────────────
 
+    /// Returns the minimum asset amount required for a single deposit.
+    ///
+    /// ## Enforcement & Units
+    /// - **Enforcement**: `min_deposit` is enforced during both `Funding` and
+    ///   `Active` states to ensure position sizes remain manageable.
+    /// - **Units**: Expressed in the vault's underlying asset units, consistent
+    ///   with `decimals()`.
     pub fn min_deposit(e: &Env) -> i128 {
         get_min_deposit(e)
     }
+
+    /// Returns the maximum asset amount a single user is allowed to deposit.
+    ///
+    /// ## Enforcement & Units
+    /// - **Enforcement**: Enforced during both `Funding` and `Active` states.
+    /// - **Uncapped**: Returns 0 if no per-user cap is configured.
+    /// - **Units**: Expressed in the vault's underlying asset units, consistent
+    ///   with `decimals()`.
     pub fn max_deposit_per_user(e: &Env) -> i128 {
         get_max_deposit_per_user(e)
     }
